@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rand C&C – Orders Admin</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      background: #f5f5f5;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 6px 10px;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+    }
+    th,
+    td {
+      border: 1px solid #ddd;
+      padding: 6px;
+      font-size: 13px;
+      vertical-align: top;
+    }
+    th {
+      background: #eee;
+    }
+    .small {
+      font-size: 11px;
+      color: #555;
+    }
+    select {
+      font-size: 12px;
+    }
+    .row-pending {
+      background: #fffaf0;
+    }
+    .row-packed {
+      background: #e7f3ff;
+    }
+    .row-out_for_delivery {
+      background: #fff4e5;
+    }
+    .row-delivered {
+      background: #e9ffe7;
+    }
+    .row-cancelled {
+      background: #ffe7e7;
+    }
+    .filters {
+      margin-bottom: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Rand C&C – Orders Admin</h1>
+  <div class="small">
+    <strong>Orders</strong> |
+    <a href="/admin/products-page">Products</a>
+  </div>
+
+  <div class="filters">
+    <button onclick="loadOrders()">Refresh</button>
+
+    <label class="small">
+      Status:
+      <select id="statusFilter" onchange="onFilterChange()">
+        <option value="all">All</option>
+        <option value="pending">Pending</option>
+        <option value="out_for_delivery">Out for delivery</option>
+      </select>
+    </label>
+
+    <label class="small">
+      <input type="checkbox" id="todayOnly" onchange="onFilterChange()" />
+      Today only
+    </label>
+
+    <span id="status" class="small"></span>
+  </div>
+
+  <table id="ordersTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Customer</th>
+        <th>Location</th>
+        <th>Note</th>
+        <th>Items</th>
+        <th>Total</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>By User</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const VALID_STATUSES = [
+      'pending',
+      'packed',
+      'out_for_delivery',
+      'delivered',
+      'cancelled'
+    ];
+
+    let lastOrders = []; // keep last fetched list for re-filtering
+
+    function rowClassForStatus(status) {
+      switch (status) {
+        case 'pending':
+          return 'row-pending';
+        case 'packed':
+          return 'row-packed';
+        case 'out_for_delivery':
+          return 'row-out_for_delivery';
+        case 'delivered':
+          return 'row-delivered';
+        case 'cancelled':
+          return 'row-cancelled';
+        default:
+          return '';
+      }
+    }
+
+    function labelForStatus(status) {
+      switch (status) {
+        case 'pending':
+          return 'Pending';
+        case 'packed':
+          return 'Packed';
+        case 'out_for_delivery':
+          return 'Out for delivery';
+        case 'delivered':
+          return 'Delivered';
+        case 'cancelled':
+          return 'Cancelled';
+        default:
+          return status || 'Unknown';
+      }
+    }
+
+    function isToday(dateString) {
+      if (!dateString) return false;
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return false;
+
+      const today = new Date();
+      return (
+        d.getFullYear() === today.getFullYear() &&
+        d.getMonth() === today.getMonth() &&
+        d.getDate() === today.getDate()
+      );
+    }
+
+    function applyFilters() {
+      const tbody = document.querySelector('#ordersTable tbody');
+      const statusEl = document.getElementById('status');
+      const statusFilter = document.getElementById('statusFilter').value;
+      const todayOnly = document.getElementById('todayOnly').checked;
+
+      tbody.innerHTML = '';
+
+      if (!Array.isArray(lastOrders) || lastOrders.length === 0) {
+        statusEl.textContent = ' No orders.';
+        return;
+      }
+
+      let filtered = lastOrders.slice();
+
+      if (statusFilter !== 'all') {
+        filtered = filtered.filter((o) => o.status === statusFilter);
+      }
+
+      if (todayOnly) {
+        filtered = filtered.filter((o) => isToday(o.createdAt));
+      }
+
+      if (filtered.length === 0) {
+        statusEl.textContent = ' No orders match current filters.';
+        return;
+      }
+
+      statusEl.textContent =
+        ' Showing ' +
+        filtered.length +
+        ' of ' +
+        lastOrders.length +
+        ' order(s) (after filters).';
+
+      filtered
+        .slice()
+        .sort((a, b) => b.id - a.id) // newest first
+        .forEach((order) => {
+          const tr = document.createElement('tr');
+          tr.className = rowClassForStatus(order.status);
+
+          const locText = order.location
+            ? `Lat: ${order.location.latitude?.toFixed?.(5) ?? order.location.latitude}, ` +
+              `Lng: ${order.location.longitude?.toFixed?.(5) ?? order.location.longitude}`
+            : 'No location';
+
+          const itemsHtml = (order.items || [])
+            .map(
+              (it) =>
+                `${it.qty} x ${it.name} (R${it.price}) = R${it.lineTotal.toFixed(2)}`
+            )
+            .join('<br>');
+
+          const userText = order.user
+            ? `${order.user.name} (${order.user.role}) [${order.user.phone}]`
+            : 'N/A';
+
+          const statusOptions = VALID_STATUSES.map((st) => {
+            const selected = st === order.status ? 'selected' : '';
+            return `<option value="${st}" ${selected}>${labelForStatus(st)}</option>`;
+          }).join('');
+
+          tr.innerHTML = `
+            <td>${order.id}</td>
+            <td>${order.customerName || ''}</td>
+            <td class="small">${locText}</td>
+            <td class="small">${order.note || ''}</td>
+            <td class="small">${itemsHtml}</td>
+            <td>R ${order.total.toFixed(2)}</td>
+            <td>
+              <select data-id="${order.id}" class="statusSelect">
+                ${statusOptions}
+              </select>
+              <button data-id="${order.id}" class="statusSaveBtn">Save</button>
+            </td>
+            <td class="small">${new Date(order.createdAt).toLocaleString()}</td>
+            <td class="small">${userText}</td>
+          `;
+
+          tbody.appendChild(tr);
+        });
+
+      // hook up save buttons
+      document.querySelectorAll('.statusSaveBtn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          saveStatus(id);
+        });
+      });
+    }
+
+    async function loadOrders() {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = ' Loading...';
+
+      try {
+        const res = await fetch('/orders');
+        const data = await res.json();
+        lastOrders = Array.isArray(data) ? data : [];
+        if (!lastOrders.length) {
+          statusEl.textContent = ' No orders yet.';
+        }
+        applyFilters();
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = ' Error loading orders: ' + e.message;
+      }
+    }
+
+    function onFilterChange() {
+      applyFilters();
+    }
+
+    async function saveStatus(id) {
+      const statusEl = document.getElementById('status');
+      const select = document.querySelector('.statusSelect[data-id="' + id + '"]');
+      const newStatus = select.value;
+
+      try {
+        statusEl.textContent = ' Saving status for order ' + id + '...';
+        const res = await fetch('/admin/orders/' + id + '/status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Status update failed');
+        }
+
+        // update local copy
+        const idx = lastOrders.findIndex((o) => o.id === data.id);
+        if (idx !== -1) {
+          lastOrders[idx] = data;
+        }
+
+        statusEl.textContent =
+          ' Updated order ' + id + ' to ' + labelForStatus(newStatus);
+        applyFilters();
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = ' Error saving status: ' + e.message;
+      }
+    }
+
+    // auto-load on page open
+    loadOrders();
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "name": "Rand Admin",
+    "phone": "0000",
+    "password": "admin123",
+    "role": "admin"
+  },
+  {
+    "id": 2,
+    "name": "Rep John",
+    "phone": "1111",
+    "password": "rep123",
+    "role": "rep"
+  },
+  {
+    "id": 3,
+    "name": "Test Customer",
+    "phone": "2222",
+    "password": "cust123",
+    "role": "customer"
+  }
+]

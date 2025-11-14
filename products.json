@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "name": "10kg Maize Meal",
+    "pack_size": "10kg",
+    "price": 89.99,
+    "isSpecial": false
+  },
+  {
+    "id": 2,
+    "name": "Sunflower Oil 2L",
+    "pack_size": "2L",
+    "price": 54.99,
+    "isSpecial": false
+  },
+  {
+    "id": 3,
+    "name": "Sugar 10kg",
+    "pack_size": "10kg",
+    "price": 124.99,
+    "isSpecial": true
+  },
+  {
+    "id": 4,
+    "name": "Zaayka",
+    "pack_size": "5kg",
+    "price": 39.99,
+    "isSpecial": true
+  }
+]

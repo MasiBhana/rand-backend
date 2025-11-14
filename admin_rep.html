@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rand C&C – Rep Orders</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 16px;
+      background: #f5f5f5;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 6px 10px;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+    }
+    th,
+    td {
+      border: 1px solid #ddd;
+      padding: 6px;
+      font-size: 13px;
+      vertical-align: top;
+    }
+    th {
+      background: #eee;
+    }
+    .small {
+      font-size: 11px;
+      color: #555;
+    }
+    .filters {
+      margin-bottom: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    input[type="text"] {
+      padding: 4px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Rand C&C – Rep Orders</h1>
+  <div class="small">
+    <a href="/admin">Admin Orders</a> |
+    <a href="/admin/products-page">Products</a> |
+    <strong>Rep View</strong>
+  </div>
+
+  <div class="filters">
+    <label class="small">
+      Your phone number:
+      <input type="text" id="repPhone" placeholder="e.g. 1111" />
+    </label>
+    <button onclick="loadRepOrders()">Load my orders</button>
+    <span id="status" class="small"></span>
+  </div>
+
+  <table id="ordersTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Customer</th>
+        <th>Status</th>
+        <th>Total</th>
+        <th>Created</th>
+        <th>Items</th>
+        <th>Location</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    async function loadRepOrders() {
+      const phoneInput = document.getElementById('repPhone');
+      const phone = phoneInput.value.trim();
+      const statusEl = document.getElementById('status');
+      const tbody = document.querySelector('#ordersTable tbody');
+
+      tbody.innerHTML = '';
+      statusEl.textContent = '';
+
+      if (!phone) {
+        statusEl.textContent = ' Please enter your phone number.';
+        return;
+      }
+
+      try {
+        statusEl.textContent = ' Loading...';
+
+        const res = await fetch('/orders');
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          statusEl.textContent = ' No orders found.';
+          return;
+        }
+
+        const filtered = data.filter(
+          (o) => o.user && String(o.user.phone) === phone
+        );
+
+        if (filtered.length === 0) {
+          statusEl.textContent =
+            ' No orders found for phone ' + phone + '.';
+          return;
+        }
+
+        statusEl.textContent =
+          ' Showing ' + filtered.length + ' order(s) for phone ' + phone + '.';
+
+        filtered
+          .slice()
+          .sort((a, b) => b.id - a.id)
+          .forEach((order) => {
+            const tr = document.createElement('tr');
+
+            const itemsHtml = (order.items || [])
+              .map(
+                (it) =>
+                  `${it.qty} x ${it.name} (R${it.price}) = R${it.lineTotal.toFixed(2)}`
+              )
+              .join('<br>');
+
+            const locText = order.location
+              ? `Lat: ${order.location.latitude?.toFixed?.(5) ?? order.location.latitude}, ` +
+                `Lng: ${order.location.longitude?.toFixed?.(5) ?? order.location.longitude}`
+              : 'No location';
+
+            tr.innerHTML = `
+              <td>${order.id}</td>
+              <td>${order.customerName || ''}</td>
+              <td>${order.status}</td>
+              <td>R ${order.total.toFixed(2)}</td>
+              <td class="small">${new Date(order.createdAt).toLocaleString()}</td>
+              <td class="small">${itemsHtml}</td>
+              <td class="small">${locText}</td>
+              <td class="small">${order.note || ''}</td>
+            `;
+
+            tbody.appendChild(tr);
+          });
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = ' Error loading orders: ' + e.message;
+      }
+    }
+  </script>
+</body>
+</html>
