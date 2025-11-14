@@ -118,6 +118,9 @@
         Today only
       </label>
 
+      <!-- NEW: download button -->
+      <button onclick="downloadCsvFiltered()">Download CSV (filtered)</button>
+
       <span id="status" class="small"></span>
     </div>
 
@@ -149,6 +152,7 @@
     ];
 
     let lastOrders = [];
+    let currentFilteredOrders = []; // 👈 store current table view for CSV
     let authToken = null;
     let currentUser = null;
 
@@ -255,6 +259,7 @@
 
       if (!Array.isArray(lastOrders) || lastOrders.length === 0) {
         statusEl.textContent = ' No orders.';
+        currentFilteredOrders = [];
         return;
       }
 
@@ -267,6 +272,8 @@
       if (todayOnly) {
         filtered = filtered.filter((o) => isToday(o.createdAt));
       }
+
+      currentFilteredOrders = filtered; // 👈 store current view
 
       if (filtered.length === 0) {
         statusEl.textContent = ' No orders match current filters.';
@@ -418,6 +425,96 @@
         console.error(e);
         statusEl.textContent = ' Error saving status: ' + e.message;
       }
+    }
+
+    // ---------- CSV DOWNLOAD (FILTERED) ----------
+    function escapeCsv(value) {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      // Wrap in quotes and escape internal quotes
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+
+    function downloadCsvFiltered() {
+      const statusEl = document.getElementById('status');
+
+      if (!currentFilteredOrders || currentFilteredOrders.length === 0) {
+        statusEl.textContent =
+          ' Nothing to export – adjust filters or load orders.';
+        return;
+      }
+
+      const headers = [
+        'Order ID',
+        'Customer',
+        'Status',
+        'Total',
+        'Created At',
+        'User Name',
+        'User Phone',
+        'User Role',
+        'Note',
+        'Location Lat',
+        'Location Lng',
+        'Items'
+      ];
+
+      const rows = currentFilteredOrders.map((o) => {
+        const lat = o.location ? o.location.latitude : '';
+        const lng = o.location ? o.location.longitude : '';
+
+        const itemsSummary = (o.items || [])
+          .map(
+            (it) =>
+              `${it.qty}x ${it.name} @ R${it.price} = R${it.lineTotal.toFixed(
+                2
+              )}`
+          )
+          .join(' | ');
+
+        const userName = o.user ? o.user.name : '';
+        const userPhone = o.user ? o.user.phone : '';
+        const userRole = o.user ? o.user.role : '';
+
+        return [
+          o.id,
+          o.customerName || '',
+          o.status,
+          o.total != null ? o.total.toFixed(2) : '',
+          o.createdAt ? new Date(o.createdAt).toISOString() : '',
+          userName,
+          userPhone,
+          userRole,
+          o.note || '',
+          lat,
+          lng,
+          itemsSummary
+        ];
+      });
+
+      let csv =
+        headers.map(escapeCsv).join(',') +
+        '\n' +
+        rows.map((row) => row.map(escapeCsv).join(',')).join('\n');
+
+      const blob = new Blob([csv], {
+        type: 'text/csv;charset=utf-8;'
+      });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      const todayStr = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `rand_orders_${todayStr}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      statusEl.textContent =
+        ' Downloaded CSV for ' +
+        currentFilteredOrders.length +
+        ' order(s).';
     }
   </script>
 </body>
