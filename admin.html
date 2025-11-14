@@ -60,51 +60,84 @@
       gap: 8px;
       align-items: center;
     }
+    .login-box {
+      background: #fff;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+    }
+    .hidden {
+      display: none;
+    }
+    input[type="text"],
+    input[type="password"] {
+      padding: 4px;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
   <h1>Rand C&C – Orders Admin</h1>
   <div class="small">
     <strong>Orders</strong> |
-    <a href="/admin/products-page">Products</a>
+    <a href="/admin/products-page">Products</a> |
+    <a href="/admin/rep">Rep View</a>
   </div>
 
-  <div class="filters">
-    <button onclick="loadOrders()">Refresh</button>
-
+  <!-- LOGIN PANEL -->
+  <div id="loginBox" class="login-box">
+    <div class="small"><strong>Admin login</strong></div>
     <label class="small">
-      Status:
-      <select id="statusFilter" onchange="onFilterChange()">
-        <option value="all">All</option>
-        <option value="pending">Pending</option>
-        <option value="out_for_delivery">Out for delivery</option>
-      </select>
+      Phone:
+      <input type="text" id="loginPhone" placeholder="e.g. 0000" />
     </label>
-
     <label class="small">
-      <input type="checkbox" id="todayOnly" onchange="onFilterChange()" />
-      Today only
+      Password:
+      <input type="password" id="loginPassword" placeholder="admin password" />
     </label>
-
-    <span id="status" class="small"></span>
+    <button onclick="login()">Login</button>
+    <span id="loginStatus" class="small"></span>
   </div>
 
-  <table id="ordersTable">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Customer</th>
-        <th>Location</th>
-        <th>Note</th>
-        <th>Items</th>
-        <th>Total</th>
-        <th>Status</th>
-        <th>Created</th>
-        <th>By User</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <!-- MAIN CONTENT (hidden until logged in) -->
+  <div id="mainContent" class="hidden">
+    <div class="filters">
+      <button onclick="loadOrders()">Refresh</button>
+
+      <label class="small">
+        Status:
+        <select id="statusFilter" onchange="onFilterChange()">
+          <option value="all">All</option>
+          <option value="pending">Pending</option>
+          <option value="out_for_delivery">Out for delivery</option>
+        </select>
+      </label>
+
+      <label class="small">
+        <input type="checkbox" id="todayOnly" onchange="onFilterChange()" />
+        Today only
+      </label>
+
+      <span id="status" class="small"></span>
+    </div>
+
+    <table id="ordersTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Customer</th>
+          <th>Location</th>
+          <th>Note</th>
+          <th>Items</th>
+          <th>Total</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>By User</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
   <script>
     const VALID_STATUSES = [
@@ -115,7 +148,55 @@
       'cancelled'
     ];
 
-    let lastOrders = []; // keep last fetched list for re-filtering
+    let lastOrders = [];
+    let authToken = null;
+    let currentUser = null;
+
+    async function login() {
+      const phone = document.getElementById('loginPhone').value.trim();
+      const password = document
+        .getElementById('loginPassword')
+        .value.trim();
+      const loginStatus = document.getElementById('loginStatus');
+
+      if (!phone || !password) {
+        loginStatus.textContent = ' Please enter phone and password.';
+        return;
+      }
+
+      loginStatus.textContent = ' Logging in...';
+
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, password })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Login failed');
+        }
+
+        if (data.user.role !== 'admin') {
+          loginStatus.textContent = ' Access denied: admin only.';
+          return;
+        }
+
+        authToken = data.token;
+        currentUser = data.user;
+        loginStatus.textContent =
+          ' Logged in as ' + currentUser.name + ' (admin).';
+
+        document.getElementById('loginBox').classList.add('hidden');
+        document.getElementById('mainContent').classList.remove('hidden');
+
+        loadOrders();
+      } catch (e) {
+        console.error(e);
+        loginStatus.textContent = ' Error: ' + e.message;
+      }
+    }
 
     function rowClassForStatus(status) {
       switch (status) {
@@ -201,20 +282,27 @@
 
       filtered
         .slice()
-        .sort((a, b) => b.id - a.id) // newest first
+        .sort((a, b) => b.id - a.id)
         .forEach((order) => {
           const tr = document.createElement('tr');
           tr.className = rowClassForStatus(order.status);
 
           const locText = order.location
-            ? `Lat: ${order.location.latitude?.toFixed?.(5) ?? order.location.latitude}, ` +
-              `Lng: ${order.location.longitude?.toFixed?.(5) ?? order.location.longitude}`
+            ? `Lat: ${
+                order.location.latitude?.toFixed?.(5) ??
+                order.location.latitude
+              }, Lng: ${
+                order.location.longitude?.toFixed?.(5) ??
+                order.location.longitude
+              }`
             : 'No location';
 
           const itemsHtml = (order.items || [])
             .map(
               (it) =>
-                `${it.qty} x ${it.name} (R${it.price}) = R${it.lineTotal.toFixed(2)}`
+                `${it.qty} x ${it.name} (R${it.price}) = R${it.lineTotal.toFixed(
+                  2
+                )}`
             )
             .join('<br>');
 
@@ -224,7 +312,9 @@
 
           const statusOptions = VALID_STATUSES.map((st) => {
             const selected = st === order.status ? 'selected' : '';
-            return `<option value="${st}" ${selected}>${labelForStatus(st)}</option>`;
+            return `<option value="${st}" ${selected}>${labelForStatus(
+              st
+            )}</option>`;
           }).join('');
 
           tr.innerHTML = `
@@ -247,7 +337,6 @@
           tbody.appendChild(tr);
         });
 
-      // hook up save buttons
       document.querySelectorAll('.statusSaveBtn').forEach((btn) => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');
@@ -260,9 +349,20 @@
       const statusEl = document.getElementById('status');
       statusEl.textContent = ' Loading...';
 
+      if (!authToken) {
+        statusEl.textContent = ' Not logged in.';
+        return;
+      }
+
       try {
-        const res = await fetch('/orders');
+        const res = await fetch('/orders', {
+          headers: { 'x-auth-token': authToken }
+        });
         const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to load orders');
+        }
+
         lastOrders = Array.isArray(data) ? data : [];
         if (!lastOrders.length) {
           statusEl.textContent = ' No orders yet.';
@@ -280,14 +380,24 @@
 
     async function saveStatus(id) {
       const statusEl = document.getElementById('status');
-      const select = document.querySelector('.statusSelect[data-id="' + id + '"]');
+      const select = document.querySelector(
+        '.statusSelect[data-id="' + id + '"]'
+      );
       const newStatus = select.value;
+
+      if (!authToken) {
+        statusEl.textContent = ' Not logged in.';
+        return;
+      }
 
       try {
         statusEl.textContent = ' Saving status for order ' + id + '...';
         const res = await fetch('/admin/orders/' + id + '/status', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-auth-token': authToken
+          },
           body: JSON.stringify({ status: newStatus })
         });
 
@@ -296,7 +406,6 @@
           throw new Error(data.message || 'Status update failed');
         }
 
-        // update local copy
         const idx = lastOrders.findIndex((o) => o.id === data.id);
         if (idx !== -1) {
           lastOrders[idx] = data;
@@ -310,9 +419,6 @@
         statusEl.textContent = ' Error saving status: ' + e.message;
       }
     }
-
-    // auto-load on page open
-    loadOrders();
   </script>
 </body>
 </html>

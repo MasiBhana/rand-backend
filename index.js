@@ -104,6 +104,25 @@ function getUserFromToken(req) {
   return users.find((u) => u.id === userId) || null;
 }
 
+// --- role guards for admin ---
+function requireAdmin(req, res, next) {
+  const user = getUserFromToken(req);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ message: 'Admin only' });
+  }
+  req.user = user;
+  next();
+}
+
+function requireAdminOrRep(req, res, next) {
+  const user = getUserFromToken(req);
+  if (!user || (user.role !== 'admin' && user.role !== 'rep')) {
+    return res.status(403).json({ message: 'Admin or rep only' });
+  }
+  req.user = user;
+  next();
+}
+
 // --- health ---
 app.get('/', (req, res) => {
   res.json({ message: 'Rand Cash & Carry API is running' });
@@ -170,12 +189,12 @@ app.get('/products', (req, res) => {
   res.json(publicProducts);
 });
 
-// --- ADMIN PRODUCTS API ---
-app.get('/admin/products', (req, res) => {
+// --- ADMIN PRODUCTS API (protected) ---
+app.get('/admin/products', requireAdmin, (req, res) => {
   res.json(products);
 });
 
-app.post('/admin/products', (req, res) => {
+app.post('/admin/products', requireAdmin, (req, res) => {
   const { name, pack_size, price, isSpecial } = req.body;
   if (!name || !pack_size || price === undefined || price === null) {
     return res
@@ -198,7 +217,7 @@ app.post('/admin/products', (req, res) => {
   res.status(201).json(product);
 });
 
-app.patch('/admin/products/:id', (req, res) => {
+app.patch('/admin/products/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const product = products.find((p) => p.id === id);
   if (!product) {
@@ -259,15 +278,15 @@ app.post('/orders', (req, res) => {
   };
 
   orders.push(order);
-  saveOrders(orders); // 👈 persist to file
+  saveOrders(orders);
 
   console.log('New order:', order);
 
   res.status(201).json(order);
 });
 
-// all orders (for admin)
-app.get('/orders', (req, res) => {
+// all orders (for admin / rep only)
+app.get('/orders', requireAdminOrRep, (req, res) => {
   res.json(orders);
 });
 
@@ -285,8 +304,8 @@ app.get('/my-orders', (req, res) => {
   res.json(userOrders);
 });
 
-// --- ADMIN ORDER STATUS UPDATE ---
-app.patch('/admin/orders/:id/status', (req, res) => {
+// --- ADMIN ORDER STATUS UPDATE (admin only) ---
+app.patch('/admin/orders/:id/status', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const { status } = req.body;
 
@@ -302,12 +321,12 @@ app.patch('/admin/orders/:id/status', (req, res) => {
   }
 
   order.status = status;
-  saveOrders(orders); // 👈 persist change
+  saveOrders(orders);
 
   res.json(order);
 });
 
-// existing admin pages
+// existing admin pages (HTML only - JS inside will handle login)
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
@@ -320,7 +339,7 @@ app.get('/admin/rep', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin_rep.html'));
 });
 
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log('Server listening on port', PORT);
 });

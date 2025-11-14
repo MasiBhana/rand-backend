@@ -42,9 +42,19 @@
       gap: 8px;
       align-items: center;
     }
-    input[type="text"] {
+    input[type="text"],
+    input[type="password"] {
       padding: 4px;
       font-size: 12px;
+    }
+    .login-box {
+      background: #fff;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #ddd;
+    }
+    .hidden {
+      display: none;
     }
   </style>
 </head>
@@ -56,68 +66,142 @@
     <strong>Rep View</strong>
   </div>
 
-  <div class="filters">
+  <!-- LOGIN PANEL -->
+  <div id="loginBox" class="login-box">
+    <div class="small"><strong>Rep login</strong></div>
     <label class="small">
-      Your phone number:
-      <input type="text" id="repPhone" placeholder="e.g. 1111" />
+      Phone:
+      <input type="text" id="loginPhone" placeholder="e.g. 1111" />
     </label>
-    <button onclick="loadRepOrders()">Load my orders</button>
-    <span id="status" class="small"></span>
+    <label class="small">
+      Password:
+      <input type="password" id="loginPassword" placeholder="rep password" />
+    </label>
+    <button onclick="login()">Login</button>
+    <span id="loginStatus" class="small"></span>
   </div>
 
-  <table id="ordersTable">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Customer</th>
-        <th>Status</th>
-        <th>Total</th>
-        <th>Created</th>
-        <th>Items</th>
-        <th>Location</th>
-        <th>Note</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <!-- MAIN CONTENT -->
+  <div id="mainContent" class="hidden">
+    <div class="filters">
+      <span id="repInfo" class="small"></span>
+      <button onclick="loadRepOrders()">Refresh my orders</button>
+      <span id="status" class="small"></span>
+    </div>
+
+    <table id="ordersTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Customer</th>
+          <th>Status</th>
+          <th>Total</th>
+          <th>Created</th>
+          <th>Items</th>
+          <th>Location</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
   <script>
+    let authToken = null;
+    let currentUser = null;
+
+    async function login() {
+      const phone = document.getElementById('loginPhone').value.trim();
+      const password = document
+        .getElementById('loginPassword')
+        .value.trim();
+      const loginStatus = document.getElementById('loginStatus');
+
+      if (!phone || !password) {
+        loginStatus.textContent = ' Please enter phone and password.';
+        return;
+      }
+
+      loginStatus.textContent = ' Logging in...';
+
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, password })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Login failed');
+        }
+
+        if (data.user.role !== 'rep' && data.user.role !== 'admin') {
+          loginStatus.textContent =
+            ' Access denied: rep or admin only.';
+          return;
+        }
+
+        authToken = data.token;
+        currentUser = data.user;
+        loginStatus.textContent =
+          ' Logged in as ' +
+          currentUser.name +
+          ' (' +
+          currentUser.role +
+          ').';
+
+        document.getElementById('loginBox').classList.add('hidden');
+        document.getElementById('mainContent').classList.remove('hidden');
+
+        document.getElementById('repInfo').textContent =
+          'Showing orders for phone: ' + currentUser.phone;
+
+        loadRepOrders();
+      } catch (e) {
+        console.error(e);
+        loginStatus.textContent = ' Error: ' + e.message;
+      }
+    }
+
     async function loadRepOrders() {
-      const phoneInput = document.getElementById('repPhone');
-      const phone = phoneInput.value.trim();
       const statusEl = document.getElementById('status');
       const tbody = document.querySelector('#ordersTable tbody');
-
       tbody.innerHTML = '';
       statusEl.textContent = '';
 
-      if (!phone) {
-        statusEl.textContent = ' Please enter your phone number.';
+      if (!authToken || !currentUser) {
+        statusEl.textContent = ' Not logged in.';
         return;
       }
 
       try {
         statusEl.textContent = ' Loading...';
 
-        const res = await fetch('/orders');
+        const res = await fetch('/orders', {
+          headers: { 'x-auth-token': authToken }
+        });
         const data = await res.json();
-        if (!Array.isArray(data) || data.length === 0) {
-          statusEl.textContent = ' No orders found.';
-          return;
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to load orders');
         }
 
         const filtered = data.filter(
-          (o) => o.user && String(o.user.phone) === phone
+          (o) => o.user && String(o.user.phone) === String(currentUser.phone)
         );
 
         if (filtered.length === 0) {
           statusEl.textContent =
-            ' No orders found for phone ' + phone + '.';
+            ' No orders found for phone ' + currentUser.phone + '.';
           return;
         }
 
         statusEl.textContent =
-          ' Showing ' + filtered.length + ' order(s) for phone ' + phone + '.';
+          ' Showing ' +
+          filtered.length +
+          ' order(s) for phone ' +
+          currentUser.phone +
+          '.';
 
         filtered
           .slice()
@@ -128,13 +212,20 @@
             const itemsHtml = (order.items || [])
               .map(
                 (it) =>
-                  `${it.qty} x ${it.name} (R${it.price}) = R${it.lineTotal.toFixed(2)}`
+                  `${it.qty} x ${it.name} (R${it.price}) = R${it.lineTotal.toFixed(
+                    2
+                  )}`
               )
               .join('<br>');
 
             const locText = order.location
-              ? `Lat: ${order.location.latitude?.toFixed?.(5) ?? order.location.latitude}, ` +
-                `Lng: ${order.location.longitude?.toFixed?.(5) ?? order.location.longitude}`
+              ? `Lat: ${
+                  order.location.latitude?.toFixed?.(5) ??
+                  order.location.latitude
+                }, Lng: ${
+                  order.location.longitude?.toFixed?.(5) ??
+                  order.location.longitude
+                }`
               : 'No location';
 
             tr.innerHTML = `
